@@ -2,15 +2,24 @@
 # Agentic OS Web - Next.js Dockerfile
 # ============================================
 
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS base
+
+WORKDIR /app
+
+RUN corepack enable
+
+# ============================================
+# Development Stage
+# ============================================
+FROM base AS development
 
 WORKDIR /app
 
 # Copy package files
 COPY apps/web/package.json apps/web/
 
-# Install dependencies
-RUN corepack enable && pnpm install --frozen-lockfile
+# Install dependencies (including dev)
+RUN pnpm install
 
 # Copy source
 COPY apps/web/src apps/web/src/
@@ -20,23 +29,39 @@ COPY apps/web/postcss.config.js apps/web/
 COPY apps/web/tailwind.config.ts apps/web/
 COPY apps/web/tsconfig.json apps/web/
 
-# Build
-RUN cd apps/web && pnpm build
+# Expose port
+EXPOSE 3000
+
+# Development command
+CMD ["pnpm", "--filter", "@agentic-os/web", "dev"]
 
 # ============================================
-# Production stage
+# Production Stage
 # ============================================
-FROM node:20-alpine AS production
+FROM base AS production
 
 WORKDIR /app
 
-# Install production dependencies
+# Copy package files
 COPY apps/web/package.json apps/web/
-RUN corepack enable && pnpm install --frozen-lockfile --prod
 
-# Copy built artifacts
-COPY --from=builder /app/apps/web/.next apps/web/.next
-COPY --from=builder /app/apps/web/public apps/web/public
+# Install production dependencies
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy source for build
+COPY apps/web/src apps/web/src/
+COPY apps/web/public apps/web/public/
+COPY apps/web/next.config.js apps/web/
+COPY apps/web/postcss.config.js apps/web/
+COPY apps/web/tailwind.config.ts apps/web/
+COPY apps/web/tsconfig.json apps/web/
+
+# Build
+WORKDIR /app/apps/web
+RUN pnpm build
+
+# Back to app root
+WORKDIR /app
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -48,7 +73,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
 EXPOSE 3000

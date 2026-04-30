@@ -4,6 +4,12 @@
 
 .PHONY: help dev prod build up down logs ps clean
 
+# Load environment from .env
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 # Default target
 help:
 	@echo "Agentic OS - Docker Commands"
@@ -31,7 +37,7 @@ help:
 dev:
 	@echo "Starting Agentic OS in development mode..."
 	@if [ ! -f .env ]; then cp .env.docker .env; fi
-	docker compose up -d
+	docker compose -f docker-compose.dev.yml up -d
 	@echo ""
 	@echo "Services started:"
 	@echo "  🌐 Web UI:    http://localhost:3000"
@@ -46,7 +52,7 @@ dev:
 # Production environment
 prod:
 	@echo "Building production images..."
-	docker compose -f docker-compose.yml build --no-cache
+	docker compose build --no-cache
 	@echo ""
 	@echo "Starting production environment..."
 	docker compose up -d
@@ -61,10 +67,22 @@ build:
 	docker compose build --no-cache
 	@echo "✅ Build complete"
 
+# Build development images
+build-dev:
+	@echo "Building development Docker images..."
+	docker compose -f docker-compose.dev.yml build --no-cache
+	@echo "✅ Build complete"
+
 # Start services
 up:
 	@echo "Starting services..."
 	docker compose up -d
+	@echo "✅ Services started"
+
+# Start dev services
+up-dev:
+	@echo "Starting development services..."
+	docker compose -f docker-compose.dev.yml up -d
 	@echo "✅ Services started"
 
 # Stop services
@@ -73,13 +91,27 @@ down:
 	docker compose down
 	@echo "✅ Services stopped"
 
+# Stop dev services
+down-dev:
+	@echo "Stopping development services..."
+	docker compose -f docker-compose.dev.yml down
+	@echo "✅ Services stopped"
+
 # View logs
 logs:
 	docker compose logs -f --tail=100
 
+# View dev logs
+logs-dev:
+	docker compose -f docker-compose.dev.yml logs -f --tail=100
+
 # Show containers
 ps:
 	@docker compose ps
+
+# Show dev containers
+ps-dev:
+	@docker compose -f docker-compose.dev.yml ps
 
 # Watch logs for specific service
 logs-api:
@@ -98,6 +130,7 @@ clean:
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose down -v --remove-orphans; \
+		docker compose -f docker-compose.dev.yml down -v --remove-orphans 2>/dev/null; \
 		echo "✅ Clean complete"; \
 	else \
 		echo "Cancelled"; \
@@ -154,3 +187,9 @@ push:
 	git add -A
 	git commit -m "$$(date +'%Y-%m-%d %H:%M') Docker setup"
 	git push
+
+# Quick start - dev with one command
+start: dev
+
+# Stop everything
+stop: down-dev

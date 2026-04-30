@@ -1,146 +1,157 @@
-# Agentic OS - Docker Deployment
+# Agentic OS - Docker Development Guide
 
 ## Quick Start
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Niceiyke/Lidan-agent.git
-cd Lidan-agent
+# 1. Copy environment file
+cp .env.example .env
 
-# 2. Configure environment
-cp .env.docker .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# 2. Edit .env with your API key
+vim .env
 
-# 3. Start development environment
+# 3. Start development
 make dev
 
 # 4. Access services
-# - Web UI: http://localhost:3000
-# - API: http://localhost:3001
+# - Web UI:    http://localhost:3000
+# - API:       http://localhost:3001
+# - Traefik:   http://localhost:8080
 ```
 
-## Production Deployment
+## Environment Configuration
 
-### Prerequisites
-- Docker & Docker Compose
-- Domain names configured:
-  - `lidan.wordlyte.com` → Your server
-  - `lidan-api.wordlyte.com` → Your server
-- DNS A records pointing to your server
-
-### Setup
+Edit `.env` file with your settings:
 
 ```bash
-# 1. Copy environment file
-cp .env.docker .env
+# Required: AI Provider API Key
+ANTHROPIC_API_KEY=your-key-here
 
-# 2. Edit .env with your settings
-vim .env
+# Database (auto-configured)
+DATABASE_URL=postgresql://agentic:agentic_dev@localhost:5432/agentic_os
 
-# 3. Build and start
-make prod
-
-# 4. Check services
-make ps
-make logs
+# Redis (auto-configured)
+REDIS_URL=redis://localhost:6379
 ```
-
-## Services
-
-| Service | Local URL | Production URL | Port |
-|---------|-----------|----------------|------|
-| Web UI | http://localhost:3000 | https://lidan.wordlyte.com | 3000 |
-| API | http://localhost:3001 | https://lidan-api.wordlyte.com | 3001 |
-| Traefik | http://localhost:8080 | - | 8080 |
-| PostgreSQL | localhost:5432 | postgres:5432 | 5432 |
-| Redis | localhost:6379 | redis:6379 | 6379 |
 
 ## Make Commands
 
 ```bash
 make help          # Show all commands
-make dev           # Start development
-make prod          # Start production
+make dev           # Start development environment
+make dev-up        # Start dev services
+make dev-down      # Stop dev services
+make dev-logs      # View dev logs
+make dev-ps        # Show dev containers
+
+make prod          # Build and start production
 make build         # Build images
 make up            # Start services
 make down          # Stop services
-make logs          # View all logs
-make logs-api      # View API logs
-make logs-web      # View web logs
-make ps            # Show containers
-make clean         # Remove everything
+make logs          # View logs
 
 # Database
-make db-migrate    # Run migrations
+make db-migrate    # Run Prisma migrations
 make db-shell      # Open psql shell
 make db-backup     # Backup database
+
+# Cleanup
+make clean         # Remove everything
+make prune         # Docker cleanup
 ```
 
-## Traefik Configuration
+## Development Features
 
-Traefik is configured with:
-- Automatic HTTPS (Let's Encrypt)
-- HTTP → HTTPS redirect
-- Custom domains via labels
+- **Hot Reload**: Source code changes reflected immediately
+- **Persistent Data**: Workspaces and databases persist in volumes
+- **Traefik**: Reverse proxy with automatic routing
+- **Port Exposure**: All services accessible on localhost
 
-### Custom Domains
+## Service URLs (Development)
 
-Add to your `/etc/hosts` (development):
+| Service | URL | Description |
+|---------|-----|-------------|
+| Web UI | http://localhost:3000 | Next.js dashboard |
+| API | http://localhost:3001 | Hono API server |
+| Traefik | http://localhost:8080 | Dashboard |
+| PostgreSQL | localhost:5432 | Database |
+| Redis | localhost:6379 | Queue |
+
+## Custom Domains (Optional)
+
+Add to `/etc/hosts` for custom domain access:
+
 ```
 127.0.0.1 lidan.wordlyte.com
 127.0.0.1 lidan-api.wordlyte.com
 ```
 
-### Production DNS
+Then access:
+- Web: http://lidan.wordlyte.com
+- API: http://lidan-api.wordlyte.com/api
 
-Set these DNS records:
-- `A` record: `lidan.wordlyte.com` → server IP
-- `A` record: `lidan-api.wordlyte.com` → server IP
+## Production Deployment
 
-## Environment Variables
+For production with HTTPS and custom domains:
 
 ```bash
-# Required
-ANTHROPIC_API_KEY=your-key-here
+# 1. Set DNS A records:
+#    lidan.wordlyte.com → server IP
+#    lidan-api.wordlyte.com → server IP
 
-# Database
-POSTGRES_PASSWORD=agentic_dev
+# 2. Update .env for production
+export NODE_ENV=production
+export CORS_ORIGIN=https://lidan.wordlyte.com
 
-# Optional
-LOG_LEVEL=info
+# 3. Start production
+make prod
 ```
 
-## Volumes
+## Docker Compose Files
 
-| Volume | Description |
-|--------|-------------|
-| `postgres_data` | PostgreSQL database |
-| `redis_data` | Redis cache |
-| `workspaces` | Agentic workspaces |
-| `traefik_certs` | SSL certificates |
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Production stack |
+| `docker-compose.dev.yml` | Development stack |
 
 ## Troubleshooting
 
 ```bash
-# Check container status
-docker compose ps
+# View all logs
+make logs
 
-# View logs
-docker compose logs -f
-
-# Restart a service
-docker compose restart api
+# View specific service logs
+make logs-api
+make logs-web
+make logs-traefik
 
 # Rebuild without cache
-docker compose build --no-cache
+docker compose -f docker-compose.dev.yml build --no-cache
 
 # Reset everything
 make clean && make dev
+
+# Check container status
+docker compose -f docker-compose.dev.yml ps
 ```
 
-## Security
+## Docker-in-Docker
 
+The API container has access to the Docker socket for:
+- Building sandbox images
+- Running containers for projects
+- Managing Docker resources
+
+## Volumes
+
+| Volume | Mount Point | Purpose |
+|--------|-------------|---------|
+| `workspaces_dev` | `/workspaces` | Project files |
+| `postgres_data_dev` | PostgreSQL data | Database storage |
+| `redis_data_dev` | Redis data | Cache & queue |
+
+## Security Notes
+
+- API key stored in `.env` (not committed to git)
 - Non-root users in containers
-- Secrets via environment variables
-- Automatic HTTPS via Let's Encrypt
-- Traefik middleware for headers
+- Port exposure for local development only
+- Production should use Traefik with HTTPS

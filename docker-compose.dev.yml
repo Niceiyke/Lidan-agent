@@ -1,0 +1,183 @@
+# ============================================
+# Agentic OS - Development Docker Compose
+# ============================================
+# For local development with hot-reload
+
+services:
+  # ============================================
+  # Traefik - Reverse Proxy
+  # ============================================
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik-dev
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=agentic-network"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls.domains[0].main=lidan.wordlyte.com"
+      - "--entrypoints.websecure.http.tls.domains[0].sans=lidan-api.wordlyte.com"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - agentic-network
+    labels:
+      - "traefik.enable=true"
+
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-postgres-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentic_dev}
+      POSTGRES_DB: agentic_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentic -d agentic_os"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis Cache & Queue
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: agentic-redis-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Agentic OS API Server (Development)
+  # ============================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: agentic-api-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      PORT: ${PORT:-3001}
+      NODE_ENV: ${NODE_ENV:-development}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      WORKSPACES_PATH: /workspaces
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    ports:
+      - "3001:3001"
+    volumes:
+      # Hot reload source code
+      - ./apps/api/src:/app/apps/api/src
+      - ./packages:/app/packages
+      # Persist workspaces
+      - workspaces_dev:/workspaces
+      # Docker-in-Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agentic-api.rule=Host(`lidan-api.wordlyte.com`) || (Host(`localhost`) && PathPrefix(`/api`))"
+      - "traefik.http.routers.agentic-api.entrypoints=web"
+      - "traefik.http.services.agentic-api-service.loadbalancer.server.port=3001"
+
+  # ============================================
+  # Agentic OS Web Dashboard (Development)
+  # ============================================
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: development
+    container_name: agentic-web-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot reload
+      - ./apps/web/src:/app/apps/web/src
+      - ./apps/web/public:/app/apps/web/public
+    depends_on:
+      - api
+    networks:
+      - agentic-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agentic-web.rule=Host(`lidan.wordlyte.com`) || Host(`localhost`)"
+      - "traefik.http.routers.agentic-web.entrypoints=web"
+      - "traefik.http.services.agentic-web-service.loadbalancer.server.port=3000"
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+  workspaces_dev:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./workspaces
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  agentic-network:
+    driver: bridge
+    name: agentic-network
