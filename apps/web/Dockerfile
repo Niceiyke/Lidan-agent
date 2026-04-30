@@ -15,16 +15,18 @@ FROM base AS development
 
 WORKDIR /app
 
-# Copy root workspace files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Copy only the lock file and workspace config first
+COPY pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
 
-# Copy web package files
+# Copy package.json files only (no source)
+COPY package.json ./
 COPY apps/web/package.json apps/web/
 
-# Install web dependencies (from monorepo)
+# Install dependencies (workspace links resolved)
 RUN pnpm install --frozen-lockfile
 
-# Copy source
+# Now copy source
 COPY apps/web/src apps/web/src/
 COPY apps/web/public apps/web/public/
 COPY apps/web/next.config.js apps/web/
@@ -33,10 +35,8 @@ COPY apps/web/postcss.config.js apps/web/
 COPY apps/web/tailwind.config.js apps/web/
 COPY apps/web/tsconfig.json apps/web/
 
-# Expose port
 EXPOSE 3000
 
-# Development command
 CMD ["pnpm", "--filter", "@agentic-os/web", "dev"]
 
 # ============================================
@@ -46,14 +46,13 @@ FROM base AS production
 
 WORKDIR /app
 
-# Copy root workspace files
+# Install production deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
 
-# Install production dependencies
 RUN pnpm install --frozen-lockfile --prod
 
-# Copy source for build
+# Copy source and build
 COPY apps/web/src apps/web/src/
 COPY apps/web/public apps/web/public/
 COPY apps/web/next.config.js apps/web/
@@ -62,14 +61,25 @@ COPY apps/web/postcss.config.js apps/web/
 COPY apps/web/tailwind.config.js apps/web/
 COPY apps/web/tsconfig.json apps/web/
 
-# Build
 WORKDIR /app/apps/web
 RUN pnpm build
 
-# Back to app root
+# Final production image
+FROM node:20-alpine
+
 WORKDIR /app
 
-# Create non-root user
+# Install only
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+
+RUN corepack enable && pnpm install --frozen-lockfile --prod
+
+# Copy built files
+COPY --from=production /app/apps/web/.next apps/web/.next
+COPY --from=production /app/apps/web/public apps/web/public
+
+# Create user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
@@ -78,7 +88,6 @@ USER nodejs
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
