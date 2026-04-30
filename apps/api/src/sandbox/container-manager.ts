@@ -406,6 +406,91 @@ export class ContainerManager {
   }
 
   /**
+   * Stream container logs via SSE
+   * Returns an AsyncIterable for use in SSE endpoints
+   */
+  async *streamLogs(
+    containerName: string,
+    options?: {
+      tail?: number;
+      since?: number; // Unix timestamp
+    }
+  ): AsyncGenerator<string> {
+    const tail = options?.tail ?? 50;
+    const since = options?.since ? `--since=${options.since}` : '';
+    
+    const proc = spawn('docker', [
+      'logs',
+      '--follow',
+      '--tail', tail.toString(),
+      '--timestamps',
+      containerName
+    ]);
+    
+    // Yield logs as they come
+    for await (const chunk of proc.stdout) {
+      yield chunk.toString();
+    }
+  }
+
+  /**
+   * Stream logs with a callback (non-async generator version)
+   */
+  async streamLogsCallback(
+    containerName: string,
+    onLine: (line: string) => void,
+    options?: { tail?: number; timeout?: number }
+  ): Promise<void> {
+    const tail = options?.tail ?? 50;
+    const timeout = options?.timeout ?? 60000;
+    
+    return new Promise((resolve, reject) => {
+      const proc = spawn('docker', [
+        'logs',
+        '--follow',
+        '--tail', tail.toString(),
+        '--timestamps',
+        containerName
+      ]);
+      
+      let completed = false;
+      
+      // Timeout handling
+      const timer = setTimeout(() => {
+        if (!completed) {
+          proc.kill();
+          resolve();
+        }
+      }, timeout);
+      
+      proc.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n').filter(Boolean);
+        for (const line of lines) {
+          onLine(line);
+        }
+      });
+      
+      proc.stderr.on('data', (data) => {
+        const lines = data.toString().split('\n').filter(Boolean);
+        for (const line of lines) {
+          onLine(`[stderr] ${line}`);
+        }
+      });
+      
+      proc.on('close', () => {
+        completed = true;
+        clearTimeout(timer);
+        resolve();
+      });
+      
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+
+  /**
    * Get container stats (CPU, memory)
    */
   async getStats(containerName: string): Promise<{

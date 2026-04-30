@@ -12,10 +12,14 @@ import goalsRouter from './routes/goals.js';
 import projectsRouter from './routes/projects.js';
 import executionsRouter from './routes/executions.js';
 import filesRouter from './routes/files.js';
+import streamingRouter from './routes/streaming.js';
+import templatesRouter from './routes/templates.js';
+import executionLogsRouter from './routes/execution-logs.js';
 import { SSEBroadcaster } from './sse.js';
 import { startWorkers, stopWorkers, getWorkerStatus } from './worker.js';
 import { getQueueStats, pauseQueues, resumeQueues } from './queue.js';
 import { Orchestrator, OrchestratorConfig } from './orchestrator.js';
+import { initializeStreamingService } from './streaming.js';
 import { 
   waitForDependencies, 
   cleanupStaleWorktrees,
@@ -59,6 +63,10 @@ async function main() {
     prisma,
     sse,
   });
+  
+  // Initialize streaming service for real-time token output
+  initializeStreamingService(sse);
+  console.log('📡 Streaming service initialized');
   
   console.log('👷 Starting workers...');
   await startWorkers(sse, prisma);
@@ -147,7 +155,10 @@ async function main() {
   app.route('/api/goals', goalsRouter);
   app.route('/api/projects', projectsRouter);
   app.route('/api/executions', executionsRouter);
+  app.route('/api/executions', executionLogsRouter);  // Log streaming
   app.route('/api/files', filesRouter);
+  app.route('/api/streaming', streamingRouter);
+  app.route('/api/templates', templatesRouter);
 
   // Admin routes
   app.post('/api/admin/queue/pause', async (c) => {
