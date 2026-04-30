@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.build/
+.next/
+.turbo/
+out/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Prisma
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+
+# Build artifacts
+*.tgz
+*.tar.gz
+
+# Pi sessions (can be large)
+.pipi/
+.pirc/
+
+# Docker volumes (exclude during development)
+# postgres_data/
+# redis_data/
+
+# Workspace directories (large, generated)
+workspaces/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Vite
+.vite/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Turborepo
+.turbo/

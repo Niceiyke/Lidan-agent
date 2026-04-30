@@ -1,0 +1,19 @@
+{
+  "name": "@agentic-os/pi-extensions",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sandbox-tools": "./src/sandbox-tools.ts",
+    "./approval-gate": "./src/approval-gate.ts"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.70.6",
+    "typebox": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

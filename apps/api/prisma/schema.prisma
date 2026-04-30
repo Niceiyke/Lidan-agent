@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+}
+
+model Project {
+  id            String   @id @default(uuid())
+  userId        String
+  name          String
+  goal          String   @db.Text // Original goal description
+  status        String   @default("planning") // planning, building, reviewing, done, failed
+  workspacePath String   // Path to worktree directory
+  mainBranch   String   @default("main")
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  user          User         @relation(fields: [userId], references: [id])
+  plans         TaskPlan[]
+  agents        Agent[]
+  containers    Container[]
+  
+  @@index([userId])
+}
+
+model Container {
+  id           String   @id @default(uuid())
+  projectId    String
+  name         String   // Docker container name
+  image        String   // Custom agent image
+  status       String   @default("stopped") // stopped, running, paused, removing
+  worktreePath String   // Container's worktree directory
+  ipAddress    String?  // Internal IP for networking
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executions   Execution[]
+  agents      Agent[]
+  
+  @@index([projectId])
+}
+
+model Agent {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  role      String   // planner, coder, reviewer, tester, debugger
+  status    String   @default("idle") // idle, planning, coding, reviewing, testing, debugging, waiting_approval, done, failed
+  sessionId String?  // Pi SDK session ID
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  project       Project            @relation(fields: [projectId], references: [id])
+  plans         TaskPlan[]
+  tasks         Task[]
+  approvals     ApprovalRequest[]
+  logs          ExecutionLog[]
+  containerId   String?
+  container     Container?         @relation(fields: [containerId], references: [id])
+  
+  @@index([projectId])
+  @@index([role])
+}
+
+model TaskPlan {
+  id        String   @id @default(uuid())
+  projectId String
+  agentId   String?
+  goal      String   @db.Text
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  project   Project  @relation(fields: [projectId], references: [id])
+  agent     Agent?   @relation(fields: [agentId], references: [id])
+  tasks     Task[]
+  
+  @@index([projectId])
+}
+
+model Task {
+  id               String    @id @default(uuid())
+  planId           String
+  type             String    // planning, coding, review, testing, debugging
+  title            String
+  description      String    @db.Text
+  status           String    @default("pending") // pending, queued, running, done, failed, blocked, cancelled
+  priority         String    @default("medium") // low, medium, high, critical
+  branchName       String?   // Git worktree branch name
+  worktreePath     String?   // Path to worktree for this task
+  
+  assignedAgentId  String?
+  parentTaskId     String?
+  
+  result           Json?
+  duration         Int?      // milliseconds
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  plan             TaskPlan  @relation(fields: [planId], references: [id])
+  assignedAgent    Agent?    @relation(fields: [assignedAgentId], references: [id])
+  parent           Task?     @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  children         Task[]    @relation("TaskHierarchy")
+  dependencies     TaskDependency[] @relation("DependentTask")
+  dependents       TaskDependency[] @relation("DependencyTask")
+  executions       Execution[]
+  
+  @@index([planId])
+  @@index([assignedAgentId])
+  @@index([status])
+}
+
+model TaskDependency {
+  taskId          String
+  dependsOnTaskId String
+  
+  task            Task @relation("DependentTask", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn      Task @relation("DependencyTask", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+  
+  @@id([taskId, dependsOnTaskId])
+}
+
+model Execution {
+  id          String   @id @default(uuid())
+  containerId String
+  taskId      String?
+  type        String   // build, test, lint, execute, install
+  status      String   @default("running") // running, success, failed, timeout, cancelled
+  output      String?  @db.Text // Log output
+  exitCode    Int?
+  command     String?  // The command that was executed
+  
+  createdAt   DateTime @default(now())
+  finishedAt  DateTime?
+  
+  container   Container @relation(fields: [containerId], references: [id])
+  task        Task?     @relation(fields: [taskId], references: [id])
+  
+  @@index([containerId])
+  @@index([taskId])
+  @@index([status])
+}
+
+model ApprovalRequest {
+  id          String   @id @default(uuid())
+  agentId     String
+  taskId      String
+  action      String   // dangerous operation type
+  description String   @db.Text
+  payload     Json
+  status      String   @default("pending") // pending, approved, rejected, cancelled
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  agent       Agent    @relation(fields: [agentId], references: [id])
+  
+  @@index([agentId])
+  @@index([status])
+}
+
+model ExecutionLog {
+  id        String   @id @default(uuid())
+  agentId   String
+  taskId    String?
+  level     String   // debug, info, warn, error
+  message   String   @db.Text
+  metadata  Json?
+  
+  createdAt DateTime @default(now())
+  
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  
+  @@index([agentId])
+  @@index([taskId])
+}

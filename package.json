@@ -1,0 +1,24 @@
+{
+  "name": "agentic-os",
+  "version": "0.2.0",
+  "description": "An AI-powered software factory",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "build": "npm run build --workspace=apps/web && npm run build --workspace=apps/api",
+    "build:sandbox": "docker build -t agentic-os/sandbox:latest -f Dockerfile.sandbox .",
+    "lint": "npm run lint --workspaces",
+    "db:generate": "npm run db:generate --workspace=apps/api",
+    "db:push": "npm run db:push --workspace=apps/api",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

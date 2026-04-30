@@ -1,0 +1,56 @@
+# Agentic OS Sandbox Dockerfile
+# Docker-in-Docker container for safe code execution
+
+FROM node:20-alpine
+
+# Install essential tools
+RUN apk add --no-cache \
+    git \
+    curl \
+    wget \
+    bash \
+    docker-cli \
+    docker-cli-compose \
+    python3 \
+    py3-pip \
+    make \
+    gcc \
+    g++ \
+    libc-dev \
+    linux-headers \
+    automake \
+    autoconf \
+    libtool \
+    pkgconfig \
+    glib \
+    zlib-dev \
+    libressl-dev \
+    libcurl \
+    openssh-client
+
+# Install pi CLI
+RUN curl -fsSL https://pi.dev/install.sh | bash
+
+# Create workspace user
+RUN adduser -D -u 1000 agent
+
+# Setup workspace directory
+WORKDIR /workspace
+RUN mkdir -p /workspace && chown -R agent:agent /workspace
+
+# Pre-install common dev tools
+USER root
+RUN npm install -g typescript ts-node nodemon 2>/dev/null || true
+
+# Configure git
+USER agent
+RUN git config --global init.defaultBranch main && \
+    git config --global pull.rebase false && \
+    git config --global credential.helper 'cache --timeout=3600'
+
+# Environment variables
+ENV DOCKER_HOST=unix:///var/run/docker.sock
+ENV PATH="/home/agent/.local/bin:${PATH}"
+
+# Default entrypoint - keeps container running
+CMD ["tail", "-f", "/dev/null"]
