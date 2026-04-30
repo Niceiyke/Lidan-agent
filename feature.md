@@ -432,8 +432,8 @@ GET /api/projects/:id/search?q=auth&type=function
 - [x] File Diff Viewer
 - [x] Deploy Integration
 
-### Phase 3: Observability
-- [ ] Cost Tracking
+### Phase 3: Observability (Partial)
+- [x] Cost Tracking (via deploy API)
 - [ ] Webhook Notifications
 - [ ] Slack/Discord Alerts
 

@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build artifacts
+dist
+.next
+.cache
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Documentation
+*.md
+!README.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.docker
+
+# Docker files (don't need them in context)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Logs
+*.log
+logs
+
+# Test
+coverage
+.nyc_output
+
+# Temp files
+tmp
+temp
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
