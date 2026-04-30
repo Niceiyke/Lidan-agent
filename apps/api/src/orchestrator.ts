@@ -207,7 +207,7 @@ export class Orchestrator {
 
       // Get planner agent from pool
       const pooled = await this.agentPool.getAgent(
-        projectId,
+        project.id,
         'planner',
         project.workspacePath
       );

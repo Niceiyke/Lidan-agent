@@ -106,6 +106,7 @@ export class AgentPool extends EventEmitter {
 
     const pooled: PooledAgent = {
       id: agentId,
+      name: `agent-${role}`,
       agent,
       role,
       projectId,

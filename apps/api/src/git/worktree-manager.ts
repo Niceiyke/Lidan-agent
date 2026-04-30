@@ -1,8 +1,11 @@
-import { exec } from 'child_process';
+import { exec as execChildProcess } from 'child_process';
+import { promisify } from 'util';
 import { promises as fs } from 'fs';
 import { join, basename } from 'path';
 import { v4 as uuid } from 'uuid';
 import type { WorktreeInfo, GitStatus, GitFileStatus } from '@agentic-os/types';
+
+const exec = promisify(execChildProcess);
 
 export class WorktreeManager {
   private basePath: string;
@@ -66,16 +69,44 @@ export class WorktreeManager {
     // Create branch from parent or main
     const baseBranch = parentBranch || this.mainBranch;
     
-    // Check if branch exists
-    const existingBranches = await this.exec('git branch -a', projectPath);
-    if (existingBranches.includes(branchName)) {
-      // Checkout existing branch in new worktree
+    // Check if branch exists in any existing worktree
+    const rawResult = await this.exec('git branch -a', projectPath);
+    const existingBranches = rawResult.stdout || rawResult;
+    
+    // List all existing worktrees to check if branch is in use
+    const worktreesResult = await this.exec('git worktree list', projectPath);
+    const existingWorktrees = worktreesResult.stdout || worktreesResult;
+    
+    // Check if branch is already used by any worktree
+    const branchInUse = existingWorktrees.includes(branchName) || existingBranches.includes(branchName);
+    
+    if (branchInUse) {
+      // Find the existing worktree path for this branch
+      const lines = existingWorktrees.split('\n');
+      let existingPath = null;
+      for (const line of lines) {
+        if (line.includes(branchName)) {
+          // Extract path from line (format: "path HEAD commit message")
+          existingPath = line.split(' ')[0];
+          break;
+        }
+      }
+      
+      if (existingPath) {
+        return {
+          branch: branchName,
+          path: existingPath,
+          isMain: false,
+        };
+      }
+      
+      // If branch exists but no worktree, create worktree without branch flag
       await this.exec(
-        `git worktree add ${worktreePath} ${branchName}`,
+        `git worktree add ${worktreePath}`,
         projectPath
       );
     } else {
-      // Create new branch
+      // Create new branch and worktree
       await this.exec(
         `git worktree add -b ${branchName} ${worktreePath} ${baseBranch}`,
         projectPath
