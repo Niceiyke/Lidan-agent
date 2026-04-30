@@ -74,63 +74,61 @@ async function startTaskWorker(): Promise<void> {
   
   taskWorker = createWorker(async (job: Job<TaskJob>): Promise<TaskResult> => {
     const { taskId, projectId, type, description, priority } = job.data;
-    const startTime = Date.now();
     
     console.log(`[Worker] Processing task ${taskId} (${type})`);
     
-    try {
-      // Update task status
+    // Update task status
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { status: 'running' },
+    });
+    
+    sse.broadcast('task:running', { taskId, type, priority });
+    
+    // Check dependencies
+    const depsMet = await orchestrator.checkDependencies(taskId);
+    if (!depsMet) {
       await prisma.task.update({
         where: { id: taskId },
-        data: { status: 'running' },
+        data: { status: 'blocked' },
       });
       
-      sse.broadcast('task:running', { taskId, type, priority });
+      sse.broadcast('task:blocked', { taskId, reason: 'Dependencies not met' });
       
-      // Check dependencies
-      const depsMet = await orchestrator.checkDependencies(taskId);
-      if (!depsMet) {
-        await prisma.task.update({
-          where: { id: taskId },
-          data: { status: 'blocked' },
-        });
-        
-        sse.broadcast('task:blocked', { taskId, reason: 'Dependencies not met' });
-        
-        return {
-          success: false,
-          error: 'Dependencies not met - task blocked',
-        };
-      }
+      return {
+        success: false,
+        error: 'Dependencies not met - task blocked',
+      };
+    }
+    
+    // Get project info
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+    
+    if (!project) {
+      return {
+        success: false,
+        error: `Project not found: ${projectId}`,
+      };
+    }
+    
+    // Get or create container
+    let containerId = await containerManager.getContainer(projectId);
+    
+    if (!containerId) {
+      const container = await containerManager.createContainer(
+        projectId,
+        project.workspacePath
+      );
+      containerId = container.containerId;
       
-      // Get project info
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
+      sse.broadcast('container:created', { 
+        projectId, 
+        containerId,
+        containerName: container.name 
       });
-      
-      if (!project) {
-        return {
-          success: false,
-          error: `Project not found: ${projectId}`,
-        };
-      }
-      
-      // Get or create container
-      let containerId = await containerManager.getContainer(projectId);
-      
-      if (!containerId) {
-        const container = await containerManager.createContainer(
-          projectId,
-          project.workspacePath
-        );
-        containerId = container.containerId;
-        
-        sse.broadcast('container:created', { 
-          projectId, 
-          containerId,
-          containerName: container.name
-        });
-      }
+    }
     
     try {
       let result: TaskResult;
