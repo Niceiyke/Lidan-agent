@@ -19,15 +19,23 @@ FROM base AS development
 
 WORKDIR /app
 
-# Copy package files
+# Copy all workspace files first (critical for pnpm to see workspace)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Copy ALL packages first (required for workspace resolution)
+COPY packages/types/package.json packages/types/
+COPY packages/pi-extensions/package.json packages/pi-extensions/
+COPY packages/pi-skills/package.json packages/pi-skills/
+COPY packages/pi-wrapper/package.json packages/pi-wrapper/
+
+# Copy ALL apps
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 
-# Install all dependencies (including dev)
+# Install ALL dependencies (so workspace links are resolved)
 RUN pnpm install
 
-# Copy source
+# Copy source code
 COPY packages packages/
 COPY apps/api/src apps/api/src/
 COPY apps/api/prisma apps/api/prisma/
@@ -50,8 +58,12 @@ FROM base AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy all workspace files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/types/package.json packages/types/
+COPY packages/pi-extensions/package.json packages/pi-extensions/
+COPY packages/pi-skills/package.json packages/pi-skills/
+COPY packages/pi-wrapper/package.json packages/pi-wrapper/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 
@@ -81,6 +93,7 @@ WORKDIR /app
 # Install production dependencies only
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/
+COPY packages/types/package.json packages/types/
 
 RUN corepack enable && pnpm install --frozen-lockfile --prod
 

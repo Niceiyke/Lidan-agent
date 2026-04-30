@@ -15,18 +15,22 @@ FROM base AS development
 
 WORKDIR /app
 
-# Copy package files
+# Copy root workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Copy web package files
 COPY apps/web/package.json apps/web/
 
-# Install dependencies (including dev)
-RUN pnpm install
+# Install web dependencies (from monorepo)
+RUN pnpm install --frozen-lockfile
 
 # Copy source
 COPY apps/web/src apps/web/src/
 COPY apps/web/public apps/web/public/
 COPY apps/web/next.config.js apps/web/
+COPY apps/web/next.config.mjs apps/web/
 COPY apps/web/postcss.config.js apps/web/
-COPY apps/web/tailwind.config.ts apps/web/
+COPY apps/web/tailwind.config.js apps/web/
 COPY apps/web/tsconfig.json apps/web/
 
 # Expose port
@@ -42,7 +46,8 @@ FROM base AS production
 
 WORKDIR /app
 
-# Copy package files
+# Copy root workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
 
 # Install production dependencies
@@ -52,8 +57,9 @@ RUN pnpm install --frozen-lockfile --prod
 COPY apps/web/src apps/web/src/
 COPY apps/web/public apps/web/public/
 COPY apps/web/next.config.js apps/web/
+COPY apps/web/next.config.mjs apps/web/
 COPY apps/web/postcss.config.js apps/web/
-COPY apps/web/tailwind.config.ts apps/web/
+COPY apps/web/tailwind.config.js apps/web/
 COPY apps/web/tsconfig.json apps/web/
 
 # Build
