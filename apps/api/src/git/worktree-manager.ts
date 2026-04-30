@@ -335,6 +335,283 @@ export class WorktreeManager {
   }
 
   // ============================================
+  // Branch Management
+  // ============================================
+
+  /**
+   * List all branches in the project
+   */
+  async listBranches(projectId: string): Promise<Array<{
+    name: string;
+    current: boolean;
+    ahead: number;
+    behind: number;
+  }>> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    // Get local branches
+    const { stdout: localBranches } = await this.exec(
+      'git for-each-ref --format="%(refname:short)|%(HEAD)" refs/heads/',
+      projectPath
+    );
+    
+    // Get remote branches
+    const { stdout: remoteBranches } = await this.exec(
+      'git for-each-ref --format="%(refname:short)" refs/remotes/',
+      projectPath
+    ).catch(() => ({ stdout: '' }));
+    
+    const branches: Array<{
+      name: string;
+      current: boolean;
+      ahead: number;
+      behind: number;
+    }> = [];
+    
+    // Parse local branches
+    for (const line of (localBranches || '').split('\n').filter(Boolean)) {
+      const [name, head] = line.split('|');
+      branches.push({
+        name: name.trim(),
+        current: head?.trim() === '*',
+        ahead: 0,
+        behind: 0,
+      });
+    }
+    
+    return branches;
+  }
+
+  /**
+   * Get current branch name
+   */
+  async getCurrentBranch(projectId: string): Promise<string> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    const { stdout } = await this.exec(
+      'git branch --show-current',
+      projectPath
+    );
+    return stdout.trim();
+  }
+
+  /**
+   * Create a new branch
+   */
+  async createBranch(
+    projectId: string,
+    branchName: string,
+    baseBranch: string = 'main'
+  ): Promise<{ branchName: string; worktreePath: string }> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    const worktreePath = join(
+      this.basePath,
+      'worktrees',
+      `wt-${uuid().slice(0, 8)}`
+    );
+    
+    // Ensure worktrees directory exists
+    await fs.mkdir(join(this.basePath, 'worktrees'), { recursive: true });
+    
+    // Create branch and worktree
+    await this.exec(
+      `git worktree add -b ${branchName} ${worktreePath} ${baseBranch}`,
+      projectPath
+    );
+    
+    // Configure git user
+    await this.exec('git config user.email "agent@agentic-os.dev"', worktreePath);
+    await this.exec('git config user.name "Agentic OS"', worktreePath);
+    
+    return { branchName, worktreePath };
+  }
+
+  /**
+   * Switch to a branch
+   */
+  async switchBranch(projectId: string, branchName: string): Promise<void> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    // Check if branch has a worktree
+    const worktrees = await this.listWorktrees(projectPath);
+    const existing = worktrees.find(w => 
+      w.branch.includes(branchName) || w.branch === branchName
+    );
+    
+    if (existing) {
+      throw new Error(`Branch ${branchName} is checked out in another worktree at ${existing.path}`);
+    }
+    
+    await this.exec(`git checkout ${branchName}`, projectPath);
+  }
+
+  /**
+   * Delete a branch
+   */
+  async deleteBranch(projectId: string, branchName: string): Promise<void> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    // Find and remove any worktrees for this branch
+    const worktrees = await this.listWorktrees(projectPath);
+    const existing = worktrees.find(w => 
+      w.branch.includes(branchName) || w.branch === branchName
+    );
+    
+    if (existing) {
+      await this.deleteWorktree(projectPath, existing.path, true);
+    }
+    
+    // Delete the branch
+    await this.exec(`git branch -D ${branchName}`, projectPath);
+  }
+
+  /**
+   * Get branch status (ahead/behind)
+   */
+  async getBranchStatus(
+    projectId: string,
+    branchName: string
+  ): Promise<{ ahead: number; behind: number; commits: string[] }> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    // Get commits ahead of main
+    const { stdout: commits } = await this.exec(
+      `git log ${this.mainBranch}..${branchName} --oneline`,
+      projectPath
+    ).catch(() => ({ stdout: '' }));
+    
+    // Count ahead/behind
+    const ahead = commits.split('\n').filter(Boolean).length;
+    
+    return {
+      ahead,
+      behind: 0,
+      commits: commits.split('\n').filter(Boolean),
+    };
+  }
+
+  /**
+   * Get changed files between branches
+   */
+  async getChangedFiles(
+    projectId: string,
+    branchName: string,
+    baseBranch: string = 'main'
+  ): Promise<Array<{
+    path: string;
+    status: string;
+  }>> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    const { stdout } = await this.exec(
+      `git diff --name-status ${baseBranch}...${branchName}`,
+      projectPath
+    );
+    
+    return stdout
+      .split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const [status, ...pathParts] = line.split('\t');
+        return {
+          status: status as string,
+          path: pathParts.join('\t'),
+        };
+      });
+  }
+
+  /**
+   * Compare two branches
+   */
+  async compareBranches(
+    projectId: string,
+    fromBranch: string,
+    toBranch: string
+  ): Promise<{
+    added: string[];
+    removed: string[];
+    modified: string[];
+    stats: { additions: number; deletions: number };
+  }> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    // Get all changes
+    const { stdout: diff } = await this.exec(
+      `git diff --name-status ${fromBranch}...${toBranch}`,
+      projectPath
+    );
+    
+    const added: string[] = [];
+    const removed: string[] = [];
+    const modified: string[] = [];
+    
+    for (const line of diff.split('\n').filter(Boolean)) {
+      const [status, ...pathParts] = line.split('\t');
+      const path = pathParts.join('\t');
+      
+      switch (status) {
+        case 'A': added.push(path); break;
+        case 'D': removed.push(path); break;
+        case 'M': modified.push(path); break;
+      }
+    }
+    
+    // Get line stats
+    const { stdout: stats } = await this.exec(
+      `git diff --stat ${fromBranch}...${toBranch}`,
+      projectPath
+    );
+    
+    // Parse stats line (e.g., "5 files changed, 20 insertions(+), 5 deletions(-)")
+    const insertions = (stats.match(/(\d+) insertion/i)?.[1] || '0');
+    const deletions = (stats.match(/(\d+) deletion/i)?.[1] || '0');
+    
+    return {
+      added,
+      removed,
+      modified,
+      stats: {
+        additions: parseInt(insertions),
+        deletions: parseInt(deletions),
+      },
+    };
+  }
+
+  /**
+   * Merge a branch into another
+   */
+  async mergeBranch(
+    projectId: string,
+    sourceBranch: string,
+    targetBranch: string = 'main'
+  ): Promise<{ success: boolean; conflicts?: string[] }> {
+    const projectPath = join(this.basePath, `project-${projectId}`);
+    
+    // Checkout target branch
+    await this.exec(`git checkout ${targetBranch}`, projectPath);
+    
+    try {
+      // Attempt merge
+      const result = await this.exec(
+        `git merge ${sourceBranch} --no-ff -m "Merge ${sourceBranch} into ${targetBranch}"`,
+        projectPath
+      );
+      
+      return { success: true };
+    } catch (error: any) {
+      // Check for conflicts
+      const { stdout: conflictedFiles } = await this.exec(
+        'git diff --name-only --diff-filter=U',
+        projectPath
+      );
+      
+      return {
+        success: false,
+        conflicts: conflictedFiles.split('\n').filter(Boolean),
+      };
+    }
+  }
+
+  // ============================================
   // Private Helpers
   // ============================================
 

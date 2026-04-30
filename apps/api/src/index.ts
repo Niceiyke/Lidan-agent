@@ -15,6 +15,9 @@ import filesRouter from './routes/files.js';
 import streamingRouter from './routes/streaming.js';
 import templatesRouter from './routes/templates.js';
 import executionLogsRouter from './routes/execution-logs.js';
+import branchesRouter from './routes/branches.js';
+import diffRouter from './routes/diff.js';
+import deployRouter from './routes/deploy.js';
 import { SSEBroadcaster } from './sse.js';
 import { startWorkers, stopWorkers, getWorkerStatus } from './worker.js';
 import { getQueueStats, pauseQueues, resumeQueues } from './queue.js';
@@ -159,6 +162,9 @@ async function main() {
   app.route('/api/files', filesRouter);
   app.route('/api/streaming', streamingRouter);
   app.route('/api/templates', templatesRouter);
+  app.route('/api/branches', branchesRouter);
+  app.route('/api/diff', diffRouter);
+  app.route('/api/deploy', deployRouter);
 
   // Admin routes
   app.post('/api/admin/queue/pause', async (c) => {
