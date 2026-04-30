@@ -11,18 +11,73 @@ export const redisConnection: ConnectionOptions = {
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
   maxRetriesPerRequest: null,
+  retryStrategy: (times: number) => {
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s (max 30s)
+    const delay = Math.min(1000 * Math.pow(2, times - 1), 30000);
+    console.log(`Redis reconnecting in ${delay}ms (attempt ${times})`);
+    return delay;
+  },
+  reconnectOnError: (err: Error) => {
+    const targetError = 'READONLY';
+    if (err.message.includes(targetError)) {
+      return true;
+    }
+    return false;
+  },
 };
 
 /**
- * Create a BullMQ worker from a processor function
+ * Create a BullMQ worker from a processor function with error handling
  */
 export function createWorker<T = any>(
   processor: (job: Job<T>) => Promise<TaskResult>
 ): Worker<T> {
-  return new Worker<T>('agent-tasks', processor, {
+  const worker = new Worker<T>('agent-tasks', async (job: Job<T>) => {
+    try {
+      const result = await processor(job);
+      return result;
+    } catch (error) {
+      // Log error with context
+      console.error(`[Worker] Job ${job.id} failed:`, error instanceof Error ? error.message : error);
+      
+      // Check if job should be retried
+      const shouldRetry = job.attemptsMade < (job.opts.attempts || 3);
+      
+      if (shouldRetry) {
+        console.log(`[Worker] Job ${job.id} will retry (attempt ${job.attemptsMade + 1}/${job.opts.attempts || 3})`);
+      }
+      
+      throw error; // Re-throw to trigger BullMQ retry
+    }
+  }, {
     connection: redisConnection,
     concurrency: 5,
+    limiter: {
+      max: 10,
+      duration: 1000, // Max 10 jobs per second
+    },
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 500 },
   });
+  
+  // Worker event handlers
+  worker.on('completed', (job) => {
+    console.log(`[Worker] Job ${job.id} completed in ${job.processingTime}ms`);
+  });
+  
+  worker.on('failed', (job, err) => {
+    console.error(`[Worker] Job ${job?.id} failed permanently:`, err.message);
+  });
+  
+  worker.on('error', (err) => {
+    console.error('[Worker] Worker error:', err.message);
+  });
+  
+  worker.on('stalled', (jobId) => {
+    console.warn(`[Worker] Job ${jobId} stalled`);
+  });
+  
+  return worker;
 }
 
 // ============================================

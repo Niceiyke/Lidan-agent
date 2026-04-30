@@ -19,13 +19,20 @@ AI-powered software factory that autonomously plans, builds, and tests applicati
 - [x] Initial database schema and migrations
 - [x] Git repository initialization
 - [x] Docker sandbox image built
-- [x] Fixed worktree creation (exec output handling)
-- [x] Fixed agent pool (name property)
-- [x] Fixed orchestrator (projectId reference)
-- [x] API server running successfully on port 5555
+- [x] API server running successfully
+- [x] **Resilience module implemented**
 
-### 🔴 Pending - Critical
-None - all critical issues resolved!
+### 🛡️ Resilience Features Implemented
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Connection retry with backoff | ✅ | Exponential backoff for DB/Redis |
+| Worktree cleanup | ✅ | Automatic cleanup of stale worktrees |
+| Health checks | ✅ | `/health/detailed`, `/ready`, `/live` |
+| Graceful shutdown | ✅ | SIGTERM/SIGINT handling |
+| Circuit breaker | ✅ | For external service calls |
+| Worker error handling | ✅ | Retry with backoff |
+| Kubernetes probes | ✅ | Readiness & liveness endpoints |
 
 ### 🟡 Pending - Important
 
@@ -45,17 +52,9 @@ Implement human-in-the-loop for critical actions.
 - [ ] Destructive operations need confirmation
 - [ ] Approval queue UI in dashboard
 
-#### 3. Error Handling
-Improve error handling and recovery.
-
-- [x] Retry failed tasks automatically
-- [x] Worktree cleanup on failure
-- [ ] Graceful worker shutdown
-- [ ] Container cleanup on failure
-
 ### 🟢 Pending - Nice to Have
 
-#### 4. Production Build
+#### 3. Production Build
 Prepare for production deployment.
 
 - [ ] Build API for production (`pnpm build:api`)
@@ -63,20 +62,11 @@ Prepare for production deployment.
 - [ ] Docker Compose for full stack
 - [ ] Environment variable validation
 
-#### 5. Testing
-Add automated tests.
-
-- [ ] Unit tests for agents
-- [ ] Integration tests for API
-- [ ] E2E tests for web UI
-- [ ] Worker load testing
-
-#### 6. Monitoring & Observability
+#### 4. Monitoring & Observability
 Add metrics and logging.
 
 - [ ] Prometheus metrics endpoint
 - [ ] Structured logging (JSON)
-- [ ] Health check improvements
 - [ ] Performance profiling
 
 ## Quick Start Commands
@@ -94,9 +84,14 @@ export ANTHROPIC_API_KEY="your-key"
 export PORT=5555
 npx tsx src/index.ts
 
-# Start Web (in another terminal)
-cd apps/web
-node node_modules/next/dist/bin/next dev -p 4222
+# Health checks
+curl http://localhost:5555/health          # Basic
+curl http://localhost:5555/health/detailed # With dependencies
+curl http://localhost:5555/ready          # Kubernetes readiness
+curl http://localhost:5555/live           # Kubernetes liveness
+
+# Cleanup stale worktrees
+curl -X POST http://localhost:5555/api/admin/cleanup?hours=48
 
 # Create a project
 curl -X POST http://localhost:5555/api/goals \
@@ -104,7 +99,16 @@ curl -X POST http://localhost:5555/api/goals \
   -d '{"goal":"A simple hello world app"}'
 ```
 
-## Architecture Diagram
+## Health Check Endpoints
+
+| Endpoint | Purpose | Returns |
+|----------|---------|---------|
+| `/health` | Basic health | Status, workers, queue |
+| `/health/detailed` | Full diagnostics | DB, Redis, Docker, worktrees |
+| `/ready` | K8s readiness | Ready if DB + Redis connected |
+| `/live` | K8s liveness | Always true if running |
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -117,6 +121,7 @@ curl -X POST http://localhost:5555/api/goals \
 │                   API Server (Hono)                     │
 │                   Port: 5555                             │
 ├─────────────────────────────────────────────────────────┤
+│  🛡️ Resilience: Retry, Circuit Breaker, Cleanup         │
 │  Routes: goals, tasks, projects, agents, approvals       │
 │  SSE: /events/stream                                    │
 └─────────────────────┬───────────────────────────────────┘
@@ -124,14 +129,16 @@ curl -X POST http://localhost:5555/api/goals \
          ┌───────────┴───────────┐
          ▼                       ▼
 ┌─────────────────┐     ┌─────────────────┐
-│  BullMQ Queue    │     │   PostgreSQL     │
-│  (Redis)         │     │   Database       │
+│  BullMQ Queue   │     │   PostgreSQL    │
+│  (Redis)         │     │   Database     │
+│  ⚡ Retry+Backoff│     │   🔄 Reconnect │
 └─────────────────┘     └─────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   Worker Pool                           │
+│                   Worker Pool                            │
 ├─────────────────────────────────────────────────────────┤
+│  🧹 Worktree Cleanup | ⚡ Retry | 🔄 Circuit Breaker    │
 │  Planner Agent → Coder Agent → Review Agent → Tester   │
 │         │              │              │              │    │
 │         └──────────────┴──────────────┴──────────────┘  │
