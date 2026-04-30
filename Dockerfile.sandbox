@@ -28,11 +28,11 @@ RUN apk add --no-cache \
     libcurl \
     openssh-client
 
-# Install pi CLI
-RUN curl -fsSL https://pi.dev/install.sh | bash
+# Install pi CLI (non-interactive)
+RUN npm install -g @mariozechner/pi-coding-agent
 
 # Create workspace user
-RUN adduser -D -u 1000 agent
+RUN adduser -D -g 'Agent' agent
 
 # Setup workspace directory
 WORKDIR /workspace
