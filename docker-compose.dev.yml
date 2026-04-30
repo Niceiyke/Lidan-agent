@@ -5,29 +5,30 @@
 
 services:
   # ============================================
-  # Traefik - Reverse Proxy
+  # Traefik - Reverse Proxy (on Edge Network)
   # ============================================
   traefik:
     image: traefik:v3.0
     container_name: traefik-dev
     restart: unless-stopped
+    networks:
+      - edge  # External edge network
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=agentic-network"
+      # Edge network configuration
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      # Entry points
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.websecure.http.tls.domains[0].main=lidan.wordlyte.com"
-      - "--entrypoints.websecure.http.tls.domains[0].sans=lidan-api.wordlyte.com"
     ports:
       - "80:80"
       - "443:443"
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - agentic-network
     labels:
       - "traefik.enable=true"
 
@@ -117,6 +118,7 @@ services:
         condition: service_healthy
     networks:
       - agentic-network
+      - edge  # Connect to edge network for Traefik routing
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
@@ -125,6 +127,7 @@ services:
       start_period: 15s
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=agentic-network"
       - "traefik.http.routers.agentic-api.rule=Host(`lidan-api.wordlyte.com`) || (Host(`localhost`) && PathPrefix(`/api`))"
       - "traefik.http.routers.agentic-api.entrypoints=web"
       - "traefik.http.services.agentic-api-service.loadbalancer.server.port=3001"
@@ -155,8 +158,10 @@ services:
       - api
     networks:
       - agentic-network
+      - edge  # Connect to edge network for Traefik routing
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=agentic-network"
       - "traefik.http.routers.agentic-web.rule=Host(`lidan.wordlyte.com`) || Host(`localhost`)"
       - "traefik.http.routers.agentic-web.entrypoints=web"
       - "traefik.http.services.agentic-web-service.loadbalancer.server.port=3000"
@@ -178,6 +183,12 @@ volumes:
 # Networks
 # ============================================
 networks:
+  # Internal network for services
   agentic-network:
     driver: bridge
     name: agentic-network
+  
+  # External edge network (created externally or will be created)
+  edge:
+    external: true
+    name: edge

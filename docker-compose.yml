@@ -1,17 +1,18 @@
 # ============================================
-# Agentic OS - Docker Compose with Traefik
+# Agentic OS - Production Docker Compose
 # ============================================
-
-version: '3.8'
+# Production deployment with Traefik on Edge network
 
 services:
   # ============================================
-  # Traefik - Reverse Proxy & Load Balancer
+  # Traefik - Reverse Proxy (on Edge Network)
   # ============================================
   traefik:
     image: traefik:v3.0
     container_name: traefik
     restart: unless-stopped
+    networks:
+      - edge  # External edge network
     command:
       # Traefik configuration
       - "--api.insecure=true"
@@ -31,16 +32,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"  # Traefik dashboard
+      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_certs:/letsencrypt
-    networks:
-      - agentic-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.local`)"
-      - "traefik.http.routers.dashboard.service=api@internal"
 
   # ============================================
   # PostgreSQL Database
@@ -49,8 +46,10 @@ services:
     image: postgres:16-alpine
     container_name: agentic-postgres
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: agentic
+      POSTGRES_USER: ${POSTGRES_USER:-agentic}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentic_dev}
       POSTGRES_DB: agentic_os
     volumes:
@@ -70,6 +69,8 @@ services:
     image: redis:7-alpine
     container_name: agentic-redis
     restart: unless-stopped
+    env_file:
+      - .env
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -88,15 +89,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production
     container_name: agentic-api
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       # Database
-      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-agentic_dev}@postgres:5432/agentic_os
+      DATABASE_URL: ${DATABASE_URL}
       # Redis
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL}
       # API Configuration
-      PORT: 3001
+      PORT: ${PORT:-3001}
       NODE_ENV: production
       # CORS
       CORS_ORIGIN: "https://lidan.wordlyte.com"
@@ -117,6 +121,7 @@ services:
         condition: service_healthy
     networks:
       - agentic-network
+      - edge  # Connect to edge network for Traefik routing
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
@@ -126,6 +131,7 @@ services:
     labels:
       # Traefik routing for API
       - "traefik.enable=true"
+      - "traefik.docker.network=agentic-network"
       - "traefik.http.routers.agentic-api.rule=Host(`lidan-api.wordlyte.com`)"
       - "traefik.http.routers.agentic-api.entrypoints=websecure"
       - "traefik.http.routers.agentic-api.tls=true"
@@ -140,8 +146,11 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      target: production
     container_name: agentic-web
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       # Next.js public URL
       NEXT_PUBLIC_API_URL: https://lidan-api.wordlyte.com
@@ -151,6 +160,7 @@ services:
       - api
     networks:
       - agentic-network
+      - edge  # Connect to edge network for Traefik routing
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 30s
@@ -159,6 +169,7 @@ services:
     labels:
       # Traefik routing for Web
       - "traefik.enable=true"
+      - "traefik.docker.network=agentic-network"
       - "traefik.http.routers.agentic-web.rule=Host(`lidan.wordlyte.com`)"
       - "traefik.http.routers.agentic-web.entrypoints=websecure"
       - "traefik.http.routers.agentic-web.tls=true"
@@ -179,5 +190,12 @@ volumes:
 # Networks
 # ============================================
 networks:
+  # Internal network for services
   agentic-network:
     driver: bridge
+    name: agentic-network
+  
+  # External edge network
+  edge:
+    external: true
+    name: edge
