@@ -427,10 +427,10 @@ GET /api/projects/:id/search?q=auth&type=function
 - [x] Project Templates
 - [x] Container Execution Logs
 
-### Phase 2: Git & Deployment
-- [ ] Branch Management
-- [ ] File Diff Viewer
-- [ ] Deploy Integration
+### Phase 2: Git ### Phase 2: Git & Deployment Deployment ✅ COMPLETED
+- [x] Branch Management
+- [x] File Diff Viewer
+- [x] Deploy Integration
 
 ### Phase 3: Observability
 - [ ] Cost Tracking
